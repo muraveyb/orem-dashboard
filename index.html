@@ -243,8 +243,8 @@ function setSyncStatus(status) {
         📂 Загрузить из файла
       </button>
       <input type="file" id="loadFileInput" accept="application/json" style="display:none;">
-      <button class="main-save-btn" id="mainSaveBtn" title="Скачать резервную копию данных в JSON-файл">
-        💾 Сохранить данные в файл
+      <button class="main-save-btn" id="mainSaveBtn" title="Сохранить данные на сервер Supabase">
+        💾 Сохранить
       </button>
       <span id="syncStatusIndicator" style="font-size:12px; color:#EF5350; margin-left:12px; min-width:130px; display:inline-block;">⊘ Offline</span>
     </div>
@@ -665,48 +665,7 @@ async function importFromBackup(event) {
 
 // Логика экспорта в физический файл по кнопке
 document.getElementById('mainSaveBtn').addEventListener('click', async () => {
-  const jsonStr = JSON.stringify(state.projects, null, 2);
-  const dateStr = new Date().toISOString().slice(0,10);
-  const filename = `orem_dashboard_backup_${dateStr}.json`;
-
-  if (FS_SUPPORTED) {
-    let dirHandle = null;
-    try {
-      dirHandle = await ensureSaveDirHandle(false);
-    } catch(e) {
-      console.error('FS pick error', e);
-      alert('Не удалось получить доступ к папке сохранения: ' + (e && e.message ? e.message : e) + '\n\nПопробуйте нажать «Папка сохранения» и выбрать её заново.');
-      return; // не скатываемся молча в загрузки — пользователь должен понимать, что доступ к папке слетел
-    }
-    if (dirHandle) {
-      try {
-        const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(jsonStr);
-        await writable.close();
-        showFlashHint(`Сохранено в папку «${dirHandle.name}»`);
-        return;
-      } catch(e) {
-        console.error('FS write error', e);
-        alert('Не удалось записать файл в выбранную папку: ' + (e && e.message ? e.message : e) + '\n\nВозможно, папка была перемещена/удалена или доступ к ней отозван браузером. Нажмите «Папка сохранения» и выберите её заново. Пока файл будет скачан в папку «Загрузки».');
-        // здесь осознанно проваливаемся в классическое скачивание ниже, но пользователь уже видит причину
-      }
-    }
-    // dirHandle === null означает, что пользователь сам отменил выбор папки — тогда просто скачиваем без лишнего alert
-  }
-
-  try {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(jsonStr);
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", filename);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-    showFlashHint('Файл бэкапа скачан в папку загрузок');
-  } catch(e) {
-    alert('Ошибка при генерации файла сохранения: ' + e.message);
-  }
+  await saveState();
 });
 
 document.getElementById('pickDirBtn').addEventListener('click', async () => {
