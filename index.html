@@ -623,20 +623,28 @@ async function saveState(){
         return filtered;
       });
       
-      const { error } = await supabaseClient.from('projects').upsert(dataToSave, { onConflict: 'id' });
+      console.log('📤 Отправляю', dataToSave.length, 'объектов в Supabase');
+      console.log('Первый объект:', dataToSave[0]);
+      
+      const { error, data } = await supabaseClient.from('projects').upsert(dataToSave, { onConflict: 'id' });
+      
+      console.log('📥 Response от Supabase:', { error, data });
+      
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('❌ Supabase error:', error);
         throw error;
       }
       setSyncStatus('synced');
+      console.log('✓ Данные сохранены на сервер');
       showFlashHint('Сохранено на сервер');
     } else {
+      console.log('📝 Сохраняю в localStorage (offline)');
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.projects));
       setSyncStatus('offline');
       showFlashHint('Сохранено в браузере (offline)');
     }
   }catch(e) {
-    console.error('storage error', e);
+    console.error('❌ Ошибка сохранения:', e);
     showFlashHint('Ошибка сохранения!');
     setSyncStatus('offline');
   }
