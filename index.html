@@ -641,6 +641,10 @@ function showFlashHint(text) {
 
 // Логика экспорта в физический файл по кнопке
 document.getElementById('mainSaveBtn').addEventListener('click', async () => {
+  // СНАЧАЛА сохраняем в Supabase
+  await saveState();
+  
+  // ПОТОМ скачиваем JSON файл как бэкап
   const jsonStr = JSON.stringify(state.projects, null, 2);
   const dateStr = new Date().toISOString().slice(0,10);
   const filename = `orem_dashboard_backup_${dateStr}.json`;
@@ -652,7 +656,7 @@ document.getElementById('mainSaveBtn').addEventListener('click', async () => {
     } catch(e) {
       console.error('FS pick error', e);
       alert('Не удалось получить доступ к папке сохранения: ' + (e && e.message ? e.message : e) + '\n\nПопробуйте нажать «Папка сохранения» и выбрать её заново.');
-      return; // не скатываемся молча в загрузки — пользователь должен понимать, что доступ к папке слетел
+      return;
     }
     if (dirHandle) {
       try {
@@ -660,15 +664,13 @@ document.getElementById('mainSaveBtn').addEventListener('click', async () => {
         const writable = await fileHandle.createWritable();
         await writable.write(jsonStr);
         await writable.close();
-        showFlashHint(`Сохранено в папку «${dirHandle.name}»`);
+        showFlashHint(`Сохранено в Supabase и в папку «${dirHandle.name}»`);
         return;
       } catch(e) {
         console.error('FS write error', e);
         alert('Не удалось записать файл в выбранную папку: ' + (e && e.message ? e.message : e) + '\n\nВозможно, папка была перемещена/удалена или доступ к ней отозван браузером. Нажмите «Папка сохранения» и выберите её заново. Пока файл будет скачан в папку «Загрузки».');
-        // здесь осознанно проваливаемся в классическое скачивание ниже, но пользователь уже видит причину
       }
     }
-    // dirHandle === null означает, что пользователь сам отменил выбор папки — тогда просто скачиваем без лишнего alert
   }
 
   try {
@@ -679,7 +681,7 @@ document.getElementById('mainSaveBtn').addEventListener('click', async () => {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-    showFlashHint('Файл бэкапа скачан в папку загрузок');
+    showFlashHint('Сохранено в Supabase + скачан JSON бэкап');
   } catch(e) {
     alert('Ошибка при генерации файла сохранения: ' + e.message);
   }
