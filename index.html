@@ -600,21 +600,34 @@ async function saveState(){
           id: p.id,
           company: p.company,
           status: p.status,
-          name: p.name,
-          code: p.code || null,
-          psi: p.psi || null,
-          date_on: p.date_on || null,
-          su_data: p.su_data || null,
-          on_stop: p.on_stop || false,
-          documents: p.documents || null,
-          notes: p.notes || null,
-          consumption: p.consumption || null
+          name: p.name
         };
+        
+        // Поля для on_orem
+        if (p.status === 'on_orem') {
+          filtered.code = p.code || null;
+          filtered.psi = p.psi || null;
+          filtered.date_on = p.date_on || null;
+          filtered.open = p.open || false;
+          filtered.su_data = p.su_data || null;
+        }
+        
+        // Поля для in_process
+        if (p.status === 'in_process') {
+          filtered.on_stop = p.on_stop || false;
+          filtered.documents = p.documents || null;
+          filtered.notes = p.notes || null;
+          filtered.consumption = p.consumption || null;
+        }
+        
         return filtered;
       });
       
       const { error } = await supabaseClient.from('projects').upsert(dataToSave, { onConflict: 'id' });
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
       setSyncStatus('synced');
       showFlashHint('Сохранено на сервер');
     } else {
