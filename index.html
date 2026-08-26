@@ -94,6 +94,8 @@
     <div style="display: flex; gap: 10px; align-items: center;">
       <button onclick="saveAllData()">💾 Сохранить</button>
       <button onclick="refreshDataFromServer()">↻ Обновить</button>
+      <button onclick="document.getElementById('fileInput').click()">📂 Загрузить</button>
+      <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="importFromBackup(event)">
       <div class="sync-indicator" id="syncStatus">
         <span class="sync-offline">⊘ Offline</span>
       </div>
@@ -196,6 +198,33 @@ async function refreshDataFromServer() {
     return;
   }
   await loadDataFromSupabase();
+}
+
+// ===== ИМПОРТ ИЗ BACKUP =====
+async function importFromBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    if (!Array.isArray(data)) {
+      showFlash('❌ Неверный формат файла');
+      return;
+    }
+    
+    state.projects = data;
+    await saveAllData();
+    showFlash(`✓ Загружено ${data.length} объектов из backup`);
+    render();
+  } catch(e) {
+    showFlash(`❌ Ошибка: ${e.message}`);
+    console.error('Ошибка импорта:', e);
+  }
+  
+  // Очищаем input
+  event.target.value = '';
 }
 
 // ===== ПРИМЕР ДАННЫХ =====
