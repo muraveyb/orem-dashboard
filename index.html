@@ -1,3 +1,15 @@
+
+// Обработчик кнопки "Обновить данные"
+document.addEventListener('DOMContentLoaded', () => {
+  initSupabase();
+  updateSyncStatusUI();
+
+  const refreshBtn = document.getElementById('refreshDataBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', refreshDataFromServer);
+  }
+});
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -192,6 +204,46 @@
   .savehint{position:fixed;bottom:16px;right:16px;font-size:11.5px;color:var(--done);background:var(--panel);border:1px solid var(--border);padding:5px 10px;border-radius:20px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100; box-shadow: 0 4px 10px rgba(0,0,0,0.3);}
   .savehint.show{opacity:1;}
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // ===== SUPABASE КОНФИГУРАЦИЯ =====
+  // Замени эти значения на свои из Supabase Dashboard
+  const SUPABASE_URL = 'https://agfricsrecfegkkyzgbb.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_eVY92lWEDEq7rfGb2GB73w_0fxE0fgh';
+  
+  let supabaseClient = null;
+  let syncStatus = 'offline'; // 'offline', 'syncing', 'synced'
+  
+  function initSupabase() {
+    if (!SUPABASE_URL.includes('YOUR_PROJECT')) {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      console.log('✓ Supabase инициализирован');
+    } else {
+      console.warn('⚠ Supabase ключи не настроены. Работаем с localStorage в режиме offline.');
+    }
+  }
+  
+  function setSyncStatus(status) {
+    syncStatus = status;
+    updateSyncStatusUI();
+  }
+  
+  function updateSyncStatusUI() {
+    const indicator = document.getElementById('syncStatusIndicator');
+    if (!indicator) return;
+    
+    const statusMap = {
+      'offline': { text: '⊘ Offline', color: '#EF5350' },
+      'syncing': { text: '↻ Синхронизирую...', color: '#FFC400' },
+      'synced': { text: '✓ Синхронизировано', color: '#66BB6A' }
+    };
+    
+    const s = statusMap[syncStatus] || statusMap['offline'];
+    indicator.textContent = s.text;
+    indicator.style.color = s.color;
+  }
+</script>
 </head>
 <body>
 
@@ -204,7 +256,7 @@
       </div>
     </div>
     <div style="display:flex; gap:8px; flex-shrink:0;">
-      <button class="main-save-btn" id="pickDirBtn" title="Выбрать папку, куда будут сохраняться бэкапы (выберите папку с этим дашбордом)" style="background:var(--panel-2); color:var(--ink);">
+      <button class="main-save-btn" id="pickDirBtn" title="Выбрать папку, куда будут сохраняться бэкапы (выберите папку с этим дашбордом)" style="background:var(--panel-2); color:var(--ink);"> <span id="syncStatusIndicator" style="font-size:12px; color:#EF5350; margin-left:12px; display:inline-block; min-width:120px;">⊘ Offline</span>
         📁 <span id="pickDirLabel">Папка сохранения</span>
       </button>
       <button class="main-save-btn" id="loadFileBtn" title="Загрузить данные из ранее скачанного JSON-бэкапа" style="background:var(--panel-2); color:var(--ink);">
@@ -422,6 +474,29 @@ function migrateDocs(projects){
 
 async function loadState(){
   try{
+    if(supabaseClient){
+      // Пытаемся загрузить с сервера
+      setSyncStatus('syncing');
+      const { data, error } = await supabaseClient
+        .from('projects')
+        .select('*');
+      
+      if(error) throw error;
+      
+      if(data && data.length > 0){
+        state.projects = ensureInvestData(migrateDocs(data));
+        setSyncStatus('synced');
+        render();
+        return;
+      }
+    }
+  }catch(e){ 
+    console.error('Supabase load error', e);
+    setSyncStatus('offline');
+  }
+  
+  // Fallback: загружаем из localStorage
+  try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
       state.projects = ensureInvestData(migrateDocs(JSON.parse(raw)));
@@ -430,10 +505,12 @@ async function loadState(){
       return;
     }
   }catch(e){ console.error('storage read error', e); }
+  
   state.projects = seedData();
   await saveState();
   render();
 }
+
 
 let saveDirHandle = null;
 const FS_SUPPORTED = typeof window.showDirectoryPicker === 'function';
@@ -529,13 +606,28 @@ async function ensureSaveDirHandle(forcePick){
 }
 
 let saveTimer;
-async function saveState(){
-  try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.projects));
-    showFlashHint('Сохранено в браузере');
-  }catch(e) {
+async function saveState() {
+  try {
+    if (supabaseClient && syncStatus !== 'offline') {
+      // Если у нас есть Supabase client, сохраняем там
+      setSyncStatus('syncing');
+      const { error } = await supabaseClient
+        .from('projects')
+        .upsert(state.projects, { onConflict: 'id' });
+      
+      if (error) throw error;
+      setSyncStatus('synced');
+      showFlashHint('Сохранено на сервер');
+    } else {
+      // Fallback на localStorage для offline режима
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.projects));
+      setSyncStatus('offline');
+      showFlashHint('Сохранено в браузере (offline)');
+    }
+  } catch(e) {
     console.error('storage error', e);
     showFlashHint('Ошибка сохранения!');
+    setSyncStatus('offline');
   }
 }
 
@@ -1015,12 +1107,42 @@ function renderProcess(){
   });
 }
 
+
+// Функция для обновления данных с сервера (использует кнопку "Обновить")
+async function refreshDataFromServer() {
+  try {
+    if (!supabaseClient) {
+      showFlashHint('Supabase не подключен');
+      return;
+    }
+    
+    setSyncStatus('syncing');
+    const { data, error } = await supabaseClient
+      .from('projects')
+      .select('*');
+    
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      state.projects = ensureInvestData(migrateDocs(data));
+      setSyncStatus('synced');
+      render();
+      showFlashHint('Данные обновлены с сервера');
+    }
+  } catch(e) {
+    console.error('Refresh error', e);
+    setSyncStatus('offline');
+    showFlashHint('Ошибка при загрузке данных');
+  }
+}
+
 function removeProject(id){
   if(!confirm('Удалить этот объект из дашборда?')) return;
   state.projects = state.projects.filter(p=>p.id!==id);
   saveState();
   render();
 }
+
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
