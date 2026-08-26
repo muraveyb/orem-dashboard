@@ -461,7 +461,14 @@ async function loadState(){
       const { data, error } = await supabaseClient.from('projects').select('*');
       if (error) throw error;
       if (data && data.length > 0) {
-        state.projects = ensureInvestData(migrateDocs(data));
+        // Нормализуем данные - удаляем служебные поля
+        const normalized = data.map(p => {
+          const item = { ...p };
+          delete item.created_at;
+          delete item.updated_at;
+          return item;
+        });
+        state.projects = ensureInvestData(migrateDocs(normalized));
         setSyncStatus('synced');
         render();
         return;
@@ -586,7 +593,27 @@ async function saveState(){
   try{
     if (supabaseClient && syncStatus !== 'offline') {
       setSyncStatus('syncing');
-      const { error } = await supabaseClient.from('projects').upsert(state.projects, { onConflict: 'id' });
+      
+      // Фильтруем данные - отправляем только нужные поля
+      const dataToSave = state.projects.map(p => {
+        const filtered = {
+          id: p.id,
+          company: p.company,
+          status: p.status,
+          name: p.name,
+          code: p.code || null,
+          psi: p.psi || null,
+          date_on: p.date_on || null,
+          su_data: p.su_data || null,
+          on_stop: p.on_stop || false,
+          documents: p.documents || null,
+          notes: p.notes || null,
+          consumption: p.consumption || null
+        };
+        return filtered;
+      });
+      
+      const { error } = await supabaseClient.from('projects').upsert(dataToSave, { onConflict: 'id' });
       if (error) throw error;
       setSyncStatus('synced');
       showFlashHint('Сохранено на сервер');
