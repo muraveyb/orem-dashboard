@@ -621,14 +621,14 @@ async function saveState(){
           filtered.psi = p.psi || null;
           filtered.date_on = p.date_on || null;
           filtered.open = p.open || false;
-          filtered.su_data = p.su_data || null;
+          filtered.su_data = (p.su_data && p.su_data.length > 0) ? p.su_data : null;
         }
         
         // Поля для in_process
         if (p.status === 'in_process') {
           filtered.on_stop = p.on_stop || false;
-          filtered.documents = p.documents || null;
-          filtered.notes = p.notes || null;
+          filtered.documents = (p.documents && p.documents.length > 0) ? p.documents : null;
+          filtered.notes = (p.notes && p.notes.length > 0) ? p.notes : null;
           filtered.consumption = p.consumption || null;
         }
         
@@ -1126,9 +1126,22 @@ function renderProcess(){
 function removeProject(id){
   if(!confirm('Удалить этот объект из дашборда?')) return;
   console.log('🗑️ Удаляю объект', id);
+  
+  // Сначала удаляем из Supabase если подключен
+  if (supabaseClient && syncStatus !== 'offline') {
+    supabaseClient.from('projects').delete().eq('id', id)
+      .then(res => {
+        if (res.error) {
+          console.error('❌ Ошибка удаления в Supabase:', res.error);
+        } else {
+          console.log('✓ Объект удалён из Supabase');
+        }
+      });
+  }
+  
+  // Потом удаляем локально
   state.projects = state.projects.filter(p=>p.id!==id);
   console.log('📊 Осталось объектов:', state.projects.length);
-  saveState();
   render();
 }
 
