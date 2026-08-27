@@ -454,13 +454,20 @@ function migrateDocs(projects){
 }
 
 async function loadState(){
+  console.log('🔄 loadState: начало загрузки');
+  
   // Пытаемся загрузить с Supabase
   if (supabaseClient) {
     try {
+      console.log('🔄 loadState: пытаюсь загрузить с Supabase...');
       setSyncStatus('syncing');
       const { data, error } = await supabaseClient.from('projects').select('*');
+      
+      console.log('🔄 loadState: ответ Supabase', { error, dataLength: data?.length });
+      
       if (error) throw error;
       if (data && data.length > 0) {
+        console.log('✓ loadState: загружено', data.length, 'объектов с Supabase');
         // Нормализуем данные - удаляем служебные поля
         const normalized = data.map(p => {
           const item = { ...p };
@@ -471,25 +478,30 @@ async function loadState(){
         state.projects = ensureInvestData(migrateDocs(normalized));
         setSyncStatus('synced');
         render();
+        console.log('✓ loadState: данные загружены и отрендерены');
         return;
       }
     } catch(e) {
-      console.error('Supabase load error', e);
+      console.error('❌ loadState Supabase error:', e);
       setSyncStatus('offline');
     }
   }
+  
+  console.log('🔄 loadState: fallback на localStorage');
   
   // Fallback на localStorage
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
+      console.log('✓ loadState: найдены данные в localStorage');
       state.projects = ensureInvestData(migrateDocs(JSON.parse(raw)));
       await saveState();
       render();
       return;
     }
-  }catch(e){ console.error('storage read error', e); }
+  }catch(e){ console.error('❌ loadState localStorage error', e); }
   
+  console.log('🌱 loadState: используются seed данные (первая загрузка)');
   state.projects = seedData();
   await saveState();
   render();
