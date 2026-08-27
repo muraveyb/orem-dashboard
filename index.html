@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2196F3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Оптовые дела">
+<link rel="apple-touch-icon" href="https://muraveyb.github.io/orem-dashboard/icon-192.png">
+<link rel="manifest" href="https://muraveyb.github.io/orem-dashboard/manifest.json">
 <title>Вывод потребителей на ОРЭМ</title>
 <style>
   /* Обновленная темная цветовая схема */
@@ -1413,6 +1419,17 @@ function openEditModal(id) {
 initSupabase();
 loadState();
 initSaveDir();
+
+// ===== PWA SERVICE WORKER =====
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('https://muraveyb.github.io/orem-dashboard/sw.js')
+    .then(reg => {
+      console.log('✓ Service Worker зарегистрирован');
+    })
+    .catch(err => {
+      console.error('❌ Ошибка регистрации Service Worker:', err);
+    });
+}
 </script>
 </body>
 </html>

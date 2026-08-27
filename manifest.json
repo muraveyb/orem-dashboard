@@ -1,0 +1,32 @@
+{
+  "name": "Оптовые дела - Вывод потребителей на ОРЭМ",
+  "short_name": "Оптовые дела",
+  "description": "Дашборд для управления вводом потребителей на оптовый рынок электроэнергии",
+  "start_url": "https://muraveyb.github.io/orem-dashboard/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#2196F3",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "https://muraveyb.github.io/orem-dashboard/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://muraveyb.github.io/orem-dashboard/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["productivity"],
+  "screenshots": [
+    {
+      "src": "https://muraveyb.github.io/orem-dashboard/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
