@@ -1125,7 +1125,9 @@ function renderProcess(){
 
 function removeProject(id){
   if(!confirm('Удалить этот объект из дашборда?')) return;
+  console.log('🗑️ Удаляю объект', id);
   state.projects = state.projects.filter(p=>p.id!==id);
+  console.log('📊 Осталось объектов:', state.projects.length);
   saveState();
   render();
 }
