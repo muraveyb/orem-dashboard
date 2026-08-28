@@ -205,6 +205,8 @@ const SUPABASE_URL = 'https://agfricsrecfegkkyzgbb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_eVY92lWEDEq7rfGb2GB73w_0fxE0fgh';
 let supabaseClient = null;
 let syncStatus = 'offline';
+let isAuthenticated = false; // Статус аутентификации
+const CORRECT_PASSWORD = 'CCK'; // Пароль для редактирования
 
 function initSupabase() {
   if (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('YOUR_PROJECT')) {
@@ -230,6 +232,37 @@ function setSyncStatus(status) {
   indicator.textContent = s.text;
   indicator.style.color = s.color;
 }
+
+// ===== ПРОВЕРКА ПАРОЛЯ =====
+function checkPassword() {
+  if (isAuthenticated) return true;
+  
+  const password = prompt('🔐 Введи пароль для редактирования:');
+  if (password === null) return false;
+  
+  if (password === CORRECT_PASSWORD) {
+    isAuthenticated = true;
+    updateAuthStatus();
+    showFlashHint('✓ Доступ к редактированию разблокирован');
+    return true;
+  } else {
+    showFlashHint('❌ Неверный пароль');
+    return false;
+  }
+}
+
+function updateAuthStatus() {
+  const indicator = document.getElementById('authStatusIndicator');
+  if (!indicator) return;
+  
+  if (isAuthenticated) {
+    indicator.textContent = '🔓 Редактирование';
+    indicator.style.color = '#66BB6A';
+  } else {
+    indicator.textContent = '🔒 Просмотр';
+    indicator.style.color = '#FF9800';
+  }
+}
 </script>
 <body>
 
@@ -253,6 +286,7 @@ function setSyncStatus(status) {
         💾 Сохранить
       </button>
       <span id="syncStatusIndicator" style="font-size:12px; color:#EF5350; margin-left:12px; min-width:130px; display:inline-block;">⊘ Offline</span>
+      <span id="authStatusIndicator" style="font-size:12px; color:#FF9800; margin-left:12px; display:inline-block;">🔒 Просмотр</span>
     </div>
   </div>
 
@@ -678,6 +712,12 @@ function showFlashHint(text) {
 
 // ===== ИМПОРТ ИЗ BACKUP =====
 async function importFromBackup(event) {
+  // Проверяем пароль
+  if (!checkPassword()) {
+    event.target.value = '';
+    return;
+  }
+  
   const file = event.target.files[0];
   if (!file) return;
   
@@ -723,6 +763,7 @@ document.getElementById('pickDirBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('loadFileBtn').addEventListener('click', () => {
+  if (!checkPassword()) return;
   document.getElementById('loadFileInput').click();
 });
 
@@ -1130,6 +1171,9 @@ function renderProcess(){
 }
 
 function removeProject(id){
+  // Проверяем пароль
+  if (!checkPassword()) return;
+  
   if(!confirm('Удалить этот объект из дашборда?')) return;
   console.log('🗑️ Удаляю объект', id);
   
@@ -1180,6 +1224,9 @@ document.getElementById('processStageFilter').addEventListener('change', (e)=>{
 });
 
 function openAddModal(type){
+  // Проверяем пароль
+  if (!checkPassword()) return;
+  
   const root = document.getElementById('modalRoot');
   const isOrem = type === 'on_orem';
   root.innerHTML = `
@@ -1362,6 +1409,9 @@ function openEditOremModal(id) {
 }
 
 function openEditModal(id) {
+  // Проверяем пароль
+  if (!checkPassword()) return;
+  
   const p = state.projects.find(proj => proj.id === id);
   if (!p) return;
   
@@ -1419,6 +1469,7 @@ function openEditModal(id) {
 initSupabase();
 loadState();
 initSaveDir();
+updateAuthStatus(); // Инициализируем индикатор аутентификации
 
 // ===== PWA SERVICE WORKER =====
 if ('serviceWorker' in navigator) {
