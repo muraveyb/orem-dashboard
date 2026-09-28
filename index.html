@@ -318,6 +318,24 @@ const DOC_ORDER = [
 const STAGE_1_DOCS = ['Заключен договор с ГП', 'ОС общая', 'ОС по сечению', 'Форма 17', 'Договор энергоснабжения', 'Макет 60000'];
 const STAGE_2_DOCS = ['Заключен договор с ГП', 'ОС общая', 'ОС по сечению', 'Форма 17', 'Договор энергоснабжения', 'Макет 60000', 'Макет 90000', 'Макет 20000'];
 
+// ===== ЗАЩИТА ПАРОЛЕМ =====
+let isAuthenticated = false;
+const CORRECT_PASSWORD = 'ССК';
+
+function checkPassword() {
+  if (isAuthenticated) return true;
+  const password = prompt('🔐 Введи пароль для редактирования:');
+  if (password === null) return false;
+  if (password === CORRECT_PASSWORD) {
+    isAuthenticated = true;
+    showFlashHint('✓ Доступ к редактированию разблокирован');
+    return true;
+  } else {
+    showFlashHint('❌ Неверный пароль');
+    return false;
+  }
+}
+
 let state = {
   activeCompany: 'ССК-Урал',
   projects: [],
@@ -724,6 +742,7 @@ document.getElementById('pickDirBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('loadFileBtn').addEventListener('click', () => {
+  if (!checkPassword()) return;
   document.getElementById('loadFileInput').click();
 });
 
@@ -1131,6 +1150,7 @@ function renderProcess(){
 }
 
 function removeProject(id){
+  if (!checkPassword()) return;
   if(!confirm('Удалить этот объект из дашборда?')) return;
   console.log('🗑️ Удаляю объект', id);
   
@@ -1181,6 +1201,7 @@ document.getElementById('processStageFilter').addEventListener('change', (e)=>{
 });
 
 function openAddModal(type){
+  if (!checkPassword()) return;
   const root = document.getElementById('modalRoot');
   const isOrem = type === 'on_orem';
   root.innerHTML = `
@@ -1363,6 +1384,7 @@ function openEditOremModal(id) {
 }
 
 function openEditModal(id) {
+  if (!checkPassword()) return;
   const p = state.projects.find(proj => proj.id === id);
   if (!p) return;
   
