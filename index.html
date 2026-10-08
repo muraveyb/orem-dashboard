@@ -88,8 +88,14 @@
   .cons-table .cons-name{text-align:left;position:sticky;left:0;z-index:1;background:var(--panel);min-width:170px;max-width:240px;white-space:normal;}
   .cons-table th.cons-name{background:var(--panel-2);z-index:2;}
   .cons-table .cons-total{position:sticky;right:0;z-index:1;background:var(--panel-2);font-family:var(--mono);font-weight:600;color:var(--accent);}
-  .cons-table tfoot td{font-weight:600;border-top:2px solid var(--border-strong);border-bottom:none;font-family:var(--mono);}
-  .cons-table tfoot td.cons-name{font-family:var(--sans);}
+  .cons-top th{background:var(--panel);border-bottom:none;padding-bottom:2px;}
+  .cons-top th.cons-name{background:var(--panel);color:var(--ink-2);font-size:11.5px;}
+  .cons-top th.cons-total{background:var(--panel-2);}
+  .cons-badge{display:inline-block;min-width:70px;padding:3px 9px;border-radius:12px;background:var(--accent-soft);border:1px solid var(--accent);color:var(--accent);font-family:var(--mono);font-size:12.5px;font-weight:600;}
+  .cons-table .cons-qcol{background:var(--panel-2);font-family:var(--mono);color:var(--ink);border-left:1px solid var(--border);}
+  .cons-top th.cons-qcol{background:var(--panel-2);}
+  .cons-table th.cons-qcol{font-family:var(--sans);}
+  .cons-qyear{font-size:10px;font-weight:400;color:var(--ink-3);}
   .cons-code{font-size:11px;color:var(--accent);font-family:var(--mono);}
   .cons-input{width:92px;text-align:right;font-family:var(--mono);font-size:13px;background:var(--bg);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:5px 6px;}
   .cons-input:focus{outline:none;border-color:var(--accent);}
@@ -920,16 +926,34 @@ function progressPct(p){
 // ===== ВКЛАДКА "ПОТРЕБЛЕНИЕ ОРЭМ" =====
 const MONTH_NAMES = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
 
+// Порядок ГТП в таблице (по коду до дефиса); остальные идут следом по коду
+const CONS_ORDER = ['PSIBSB10','PSIBSB12','PSIBSB13','PSIBSB15','PSIBSBI1','PSIBSBI3','PSIBSBI4','PSIBSBI5','PSIBSBI6','PSIBSBI7','PSIBSBI8','PSIBSBI9'];
+function consCodeKey(p){
+  return String(p.code || '').split('-')[0].trim().toUpperCase();
+}
 function consProjects(){
   return state.projects
     .filter(p => p.company === CONS_COMPANY && p.status === 'on_orem')
-    .sort((a,b) => String(a.name).localeCompare(String(b.name), 'ru'));
+    .sort((a, b) => {
+      const ia = CONS_ORDER.indexOf(consCodeKey(a));
+      const ib = CONS_ORDER.indexOf(consCodeKey(b));
+      if (ia !== -1 || ib !== -1) {
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      }
+      return consCodeKey(a).localeCompare(consCodeKey(b)) || String(a.name).localeCompare(String(b.name), 'ru');
+    });
 }
 function consMonths(){
   const set = new Set();
   consProjects().forEach(p => Object.keys(p.monthly || {}).forEach(k => set.add(k)));
   return [...set].sort();
 }
+function consYears(){
+  return [...new Set(consMonths().map(k => k.split('-')[0]))].sort();
+}
+function quarterOf(key){ return Math.ceil(+key.split('-')[1] / 3); }
 function monthLabel(key){
   const [y, m] = key.split('-');
   return MONTH_NAMES[+m - 1] + ' ' + y;
@@ -937,25 +961,49 @@ function monthLabel(key){
 function fmtNum(n){
   return n.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 }
-function numVal(v){ return (typeof v === 'number' && isFinite(v)) ? v : 0; }
-function projTotal(p){
-  return Object.values(p.monthly || {}).reduce((s, v) => s + numVal(v), 0);
+// Сумма значений; если чисел нет совсем — прочерк
+function fmtSum(vals){
+  const nums = vals.filter(v => typeof v === 'number' && isFinite(v));
+  return nums.length ? fmtNum(nums.reduce((s, v) => s + v, 0)) : '—';
+}
+// Значения проекта (или всех проектов) за квартал года
+function quarterVals(list, year, q){
+  const out = [];
+  list.forEach(p => Object.keys(p.monthly || {}).forEach(k => {
+    if (k.split('-')[0] === year && quarterOf(k) === q) out.push(p.monthly[k]);
+  }));
+  return out;
 }
 
 function renderConsumption(){
   const el = document.getElementById('consumptionList');
   const list = consProjects();
   const months = consMonths();
+  const years = consYears();
 
   if (!list.length) {
     el.innerHTML = '<div class="cons-empty">Нет объектов «на ОРЭМ» во вкладке ' + CONS_COMPANY + '</div>';
     return;
   }
 
-  let h = '<div class="cons-wrap"><table class="cons-table"><thead><tr><th class="cons-name">ГТП / сечение</th>';
+  // Колонки кварталов: по четыре (1–4) на каждый год, в котором есть месяцы
+  const quarters = [];
+  years.forEach(y => [1, 2, 3, 4].forEach(q => quarters.push({ year: y, q: q })));
+
+  let h = '<div class="cons-wrap"><table class="cons-table"><thead>';
+
+  // Верхняя строка: плашки с суммой по всем ГТП над каждым месяцем и кварталом
+  h += '<tr class="cons-top"><th class="cons-name">Всего по всем ГТП</th>';
+  months.forEach(m => { h += '<th><span class="cons-badge" data-top-month="' + m + '"></span></th>'; });
+  quarters.forEach(x => { h += '<th class="cons-qcol"><span class="cons-badge" data-top-q="' + x.year + '-' + x.q + '"></span></th>'; });
+  h += '<th class="cons-total"><span class="cons-badge" id="consGrand"></span></th></tr>';
+
+  // Вторая строка: названия столбцов
+  h += '<tr><th class="cons-name">ГТП / сечение</th>';
   months.forEach(m => {
     h += '<th>' + monthLabel(m) + '<button class="cons-del" data-month="' + m + '" title="Удалить месяц">✕</button></th>';
   });
+  quarters.forEach(x => { h += '<th class="cons-qcol">' + x.q + ' кв.<div class="cons-qyear">' + x.year + '</div></th>'; });
   h += '<th class="cons-total">Итого, ' + CONS_UNIT + '</th></tr></thead><tbody>';
 
   list.forEach(p => {
@@ -966,12 +1014,11 @@ function renderConsumption(){
       const shown = (typeof v === 'number') ? String(v).replace('.', ',') : '';
       h += '<td><input class="cons-input" inputmode="decimal" data-id="' + p.id + '" data-month="' + m + '" value="' + shown + '"></td>';
     });
+    quarters.forEach(x => { h += '<td class="cons-qcol" data-q-id="' + p.id + '" data-q="' + x.year + '-' + x.q + '"></td>'; });
     h += '<td class="cons-total" data-total-id="' + p.id + '"></td></tr>';
   });
 
-  h += '</tbody><tfoot><tr><td class="cons-name">Всего по всем ГТП</td>';
-  months.forEach(m => { h += '<td data-foot-month="' + m + '"></td>'; });
-  h += '<td class="cons-total" id="consGrand"></td></tr></tfoot></table></div>';
+  h += '</tbody></table></div>';
   if (!months.length) h += '<div class="cons-empty" style="margin-top:10px;">Добавь первый месяц кнопкой «+ месяц»</div>';
   el.innerHTML = h;
 
@@ -988,19 +1035,29 @@ function renderConsumption(){
 function updateConsTotals(){
   const list = consProjects();
   const months = consMonths();
+  const years = consYears();
+
+  // Итого по каждому ГТП и его кварталы
   list.forEach(p => {
     const c = document.querySelector('[data-total-id="' + p.id + '"]');
-    if (c) c.textContent = fmtNum(projTotal(p));
+    if (c) c.textContent = fmtSum(Object.values(p.monthly || {}));
+    years.forEach(y => [1, 2, 3, 4].forEach(q => {
+      const qc = document.querySelector('[data-q-id="' + p.id + '"][data-q="' + y + '-' + q + '"]');
+      if (qc) qc.textContent = fmtSum(quarterVals([p], y, q));
+    }));
   });
-  let grand = 0;
+
+  // Плашки сверху: сумма по всем ГТП за месяц, квартал и всего
   months.forEach(m => {
-    const sum = list.reduce((s, p) => s + numVal((p.monthly || {})[m]), 0);
-    grand += sum;
-    const c = document.querySelector('[data-foot-month="' + m + '"]');
-    if (c) c.textContent = fmtNum(sum);
+    const c = document.querySelector('[data-top-month="' + m + '"]');
+    if (c) c.textContent = fmtSum(list.map(p => (p.monthly || {})[m]));
   });
+  years.forEach(y => [1, 2, 3, 4].forEach(q => {
+    const c = document.querySelector('[data-top-q="' + y + '-' + q + '"]');
+    if (c) c.textContent = fmtSum(quarterVals(list, y, q));
+  }));
   const g = document.getElementById('consGrand');
-  if (g) g.textContent = fmtNum(grand);
+  if (g) g.textContent = fmtSum(list.flatMap(p => Object.values(p.monthly || {})));
 }
 
 function onConsInputChange(inp){
