@@ -80,6 +80,22 @@
 
   /* Секции */
   .section{margin-bottom:30px;}
+  /* Вкладка "Потребление ОРЭМ" */
+  .cons-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);}
+  .cons-table{border-collapse:collapse;width:100%;font-size:13px;}
+  .cons-table th,.cons-table td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:right;white-space:nowrap;}
+  .cons-table th{font-size:11.5px;font-weight:600;color:var(--ink-2);background:var(--panel-2);}
+  .cons-table .cons-name{text-align:left;position:sticky;left:0;z-index:1;background:var(--panel);min-width:170px;max-width:240px;white-space:normal;}
+  .cons-table th.cons-name{background:var(--panel-2);z-index:2;}
+  .cons-table .cons-total{position:sticky;right:0;z-index:1;background:var(--panel-2);font-family:var(--mono);font-weight:600;color:var(--accent);}
+  .cons-table tfoot td{font-weight:600;border-top:2px solid var(--border-strong);border-bottom:none;font-family:var(--mono);}
+  .cons-table tfoot td.cons-name{font-family:var(--sans);}
+  .cons-code{font-size:11px;color:var(--accent);font-family:var(--mono);}
+  .cons-input{width:92px;text-align:right;font-family:var(--mono);font-size:13px;background:var(--bg);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:5px 6px;}
+  .cons-input:focus{outline:none;border-color:var(--accent);}
+  .cons-del{margin-left:6px;background:none;border:none;color:var(--ink-3);cursor:pointer;font-size:11px;padding:0 2px;}
+  .cons-del:hover{color:#EF5350;}
+  .cons-empty{padding:24px;text-align:center;color:var(--ink-3);font-size:13px;background:var(--panel);border:1px dashed var(--border-strong);border-radius:var(--radius);}
   .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
   .section-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);}
   .addbtn{font-family:var(--sans);font-size:12.5px;font-weight:500;color:var(--accent);background:var(--accent-soft);border:none;border-radius:7px;padding:6px 11px;cursor:pointer; transition: background 0.1s;}
@@ -260,7 +276,7 @@ function setSyncStatus(status) {
   <div class="companytabs" id="companytabs"></div>
   <div class="kpis" id="kpis"></div>
 
-  <div class="section">
+  <div class="section" id="oremSection">
     <div class="section-head">
       <span class="section-title">На ОРЭМ</span>
       <div class="toolbar">
@@ -272,7 +288,7 @@ function setSyncStatus(status) {
     <div id="oremlist" class="orem-grid"></div>
   </div>
 
-  <div class="section">
+  <div class="section" id="processSection">
     <div class="section-head">
       <span class="section-title">В процессе</span>
       <div class="toolbar">
@@ -290,6 +306,16 @@ function setSyncStatus(status) {
     <div id="processlist"></div>
   </div>
 
+  <div class="section" id="consumptionSection" style="display:none;">
+    <div class="section-head">
+      <span class="section-title">Покупка э/э на ОРЭМ по ГТП · ССК-Урал</span>
+      <div class="toolbar">
+        <button class="addbtn" id="consAddMonthBtn">+ месяц</button>
+      </div>
+    </div>
+    <div id="consumptionList"></div>
+  </div>
+
   <div id="modalRoot"></div>
   <div class="savehint" id="saveHint">сохранено</div>
 
@@ -297,6 +323,9 @@ function setSyncStatus(status) {
 // (Скрипт остается без изменений)
 const STORAGE_KEY = 'orem-dashboard-projects-v4';
 const COMPANIES = ['ССК-Урал','ССК-Центр','ССК-Инвест'];
+const CONSUMPTION_TAB = '__consumption__';   // служебное имя вкладки "Потребление ОРЭМ"
+const CONS_COMPANY = 'ССК-Урал';             // чьи объекты "на ОРЭМ" попадают во вкладку
+const CONS_UNIT = 'кВт·ч';                   // единица измерения (меняется здесь)
 const COMPANY_TAB_LABELS = {
   'ССК-Инвест': 'ССК-Инвест ЦОД <b>Срочно</b> 🔥'
 };
@@ -647,6 +676,7 @@ async function saveState(){
           filtered.date_on = p.date_on || null;
           filtered.open = p.open || false;
           filtered.su_data = (p.su_data && p.su_data.length > 0) ? p.su_data : null;
+          filtered.monthly = p.monthly || null;
         }
         
         // Поля для in_process
@@ -663,7 +693,15 @@ async function saveState(){
       console.log('📤 Отправляю', dataToSave.length, 'объектов в Supabase');
       console.log('Первый объект:', dataToSave[0]);
       
-      const { error, data } = await supabaseClient.from('projects').upsert(dataToSave, { onConflict: 'id' });
+      let { error, data } = await supabaseClient.from('projects').upsert(dataToSave, { onConflict: 'id' });
+      let monthlyMissing = false;
+      if (error && /monthly/i.test(error.message || '')) {
+        // В Supabase ещё нет колонки monthly — сохраняем остальное, чтобы ничего не сломать
+        console.warn('⚠️ В таблице projects нет колонки monthly — сохраняю без неё');
+        monthlyMissing = true;
+        const stripped = dataToSave.map(({ monthly, ...rest }) => rest);
+        ({ error, data } = await supabaseClient.from('projects').upsert(stripped, { onConflict: 'id' }));
+      }
       
       console.log('📥 Response от Supabase:', { error, data });
       
@@ -673,7 +711,7 @@ async function saveState(){
       }
       setSyncStatus('synced');
       console.log('✓ Данные сохранены на сервер');
-      showFlashHint('Сохранено на сервер');
+      showFlashHint(monthlyMissing ? '⚠️ Потребление НЕ сохранено: нет колонки monthly в Supabase' : 'Сохранено на сервер');
     } else {
       console.log('📝 Сохраняю в localStorage (offline)');
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.projects));
@@ -878,8 +916,152 @@ function progressPct(p){
   return Math.round(100*doneCount/p.documents.length);
 }
 
+
+// ===== ВКЛАДКА "ПОТРЕБЛЕНИЕ ОРЭМ" =====
+const MONTH_NAMES = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+
+function consProjects(){
+  return state.projects
+    .filter(p => p.company === CONS_COMPANY && p.status === 'on_orem')
+    .sort((a,b) => String(a.name).localeCompare(String(b.name), 'ru'));
+}
+function consMonths(){
+  const set = new Set();
+  consProjects().forEach(p => Object.keys(p.monthly || {}).forEach(k => set.add(k)));
+  return [...set].sort();
+}
+function monthLabel(key){
+  const [y, m] = key.split('-');
+  return MONTH_NAMES[+m - 1] + ' ' + y;
+}
+function fmtNum(n){
+  return n.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+}
+function numVal(v){ return (typeof v === 'number' && isFinite(v)) ? v : 0; }
+function projTotal(p){
+  return Object.values(p.monthly || {}).reduce((s, v) => s + numVal(v), 0);
+}
+
+function renderConsumption(){
+  const el = document.getElementById('consumptionList');
+  const list = consProjects();
+  const months = consMonths();
+
+  if (!list.length) {
+    el.innerHTML = '<div class="cons-empty">Нет объектов «на ОРЭМ» во вкладке ' + CONS_COMPANY + '</div>';
+    return;
+  }
+
+  let h = '<div class="cons-wrap"><table class="cons-table"><thead><tr><th class="cons-name">ГТП / сечение</th>';
+  months.forEach(m => {
+    h += '<th>' + monthLabel(m) + '<button class="cons-del" data-month="' + m + '" title="Удалить месяц">✕</button></th>';
+  });
+  h += '<th class="cons-total">Итого, ' + CONS_UNIT + '</th></tr></thead><tbody>';
+
+  list.forEach(p => {
+    const code = (p.code && p.code !== '—') ? p.code : '';
+    h += '<tr><td class="cons-name"><div>' + escapeHtml(p.name) + '</div><div class="cons-code">' + escapeHtml(code) + '</div></td>';
+    months.forEach(m => {
+      const v = (p.monthly || {})[m];
+      const shown = (typeof v === 'number') ? String(v).replace('.', ',') : '';
+      h += '<td><input class="cons-input" inputmode="decimal" data-id="' + p.id + '" data-month="' + m + '" value="' + shown + '"></td>';
+    });
+    h += '<td class="cons-total" data-total-id="' + p.id + '"></td></tr>';
+  });
+
+  h += '</tbody><tfoot><tr><td class="cons-name">Всего по всем ГТП</td>';
+  months.forEach(m => { h += '<td data-foot-month="' + m + '"></td>'; });
+  h += '<td class="cons-total" id="consGrand"></td></tr></tfoot></table></div>';
+  if (!months.length) h += '<div class="cons-empty" style="margin-top:10px;">Добавь первый месяц кнопкой «+ месяц»</div>';
+  el.innerHTML = h;
+
+  el.querySelectorAll('.cons-input').forEach(inp => {
+    inp.addEventListener('focus', () => { if (!checkPassword()) inp.blur(); });
+    inp.addEventListener('change', () => onConsInputChange(inp));
+  });
+  el.querySelectorAll('.cons-del').forEach(btn => {
+    btn.addEventListener('click', () => deleteConsMonth(btn.dataset.month));
+  });
+  updateConsTotals();
+}
+
+function updateConsTotals(){
+  const list = consProjects();
+  const months = consMonths();
+  list.forEach(p => {
+    const c = document.querySelector('[data-total-id="' + p.id + '"]');
+    if (c) c.textContent = fmtNum(projTotal(p));
+  });
+  let grand = 0;
+  months.forEach(m => {
+    const sum = list.reduce((s, p) => s + numVal((p.monthly || {})[m]), 0);
+    grand += sum;
+    const c = document.querySelector('[data-foot-month="' + m + '"]');
+    if (c) c.textContent = fmtNum(sum);
+  });
+  const g = document.getElementById('consGrand');
+  if (g) g.textContent = fmtNum(grand);
+}
+
+function onConsInputChange(inp){
+  const p = state.projects.find(x => x.id === inp.dataset.id);
+  if (!p) return;
+  const raw = inp.value.trim().replace(/\s/g, '').replace(',', '.');
+  let val = null;
+  if (raw !== '') {
+    val = Number(raw);
+    if (!isFinite(val)) {
+      showFlashHint('Нужно ввести число');
+      const old = (p.monthly || {})[inp.dataset.month];
+      inp.value = (typeof old === 'number') ? String(old).replace('.', ',') : '';
+      return;
+    }
+  }
+  if (!p.monthly) p.monthly = {};
+  p.monthly[inp.dataset.month] = val;
+  inp.value = (val === null) ? '' : String(val).replace('.', ',');
+  updateConsTotals();      // пересчёт без перерисовки, чтобы Tab переходил к следующей ячейке
+  saveState();
+}
+
+function addConsMonth(){
+  if (!checkPassword()) return;
+  const months = consMonths();
+  let d;
+  if (months.length) {
+    const [y, m] = months[months.length - 1].split('-').map(Number);
+    d = new Date(y, m, 1);              // следующий месяц после последнего
+  } else {
+    d = new Date();
+  }
+  const def = String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear();
+  const s = prompt('Какой месяц добавить? (ММ.ГГГГ)', def);
+  if (!s) return;
+  const mm = s.trim().match(/^(\d{1,2})[.\/-](\d{4})$/);
+  if (!mm || +mm[1] < 1 || +mm[1] > 12) { showFlashHint('Формат: ММ.ГГГГ, например 10.2026'); return; }
+  const key = mm[2] + '-' + mm[1].padStart(2, '0');
+  if (months.includes(key)) { showFlashHint('Такой месяц уже есть'); return; }
+  consProjects().forEach(p => { if (!p.monthly) p.monthly = {}; p.monthly[key] = null; });
+  saveState();
+  renderConsumption();
+}
+
+function deleteConsMonth(key){
+  if (!checkPassword()) return;
+  if (!confirm('Удалить столбец «' + monthLabel(key) + '» вместе со всеми введёнными значениями?')) return;
+  state.projects.forEach(p => { if (p.monthly && key in p.monthly) delete p.monthly[key]; });
+  saveState();
+  renderConsumption();
+}
+
 function render(){
   renderTabs();
+  const isCons = state.activeCompany === CONSUMPTION_TAB;
+  document.getElementById('kpis').style.display = isCons ? 'none' : '';
+  document.getElementById('oremSection').style.display = isCons ? 'none' : '';
+  document.getElementById('processSection').style.display = isCons ? 'none' : '';
+  document.getElementById('consumptionSection').style.display = isCons ? '' : 'none';
+  if (isCons) { renderConsumption(); return; }
   renderKpis();
   renderOrem();
   renderProcess();
@@ -895,6 +1077,11 @@ function renderTabs(){
     b.addEventListener('click', ()=>{ state.activeCompany = c; render(); });
     el.appendChild(b);
   });
+  const cb = document.createElement('button');
+  cb.className = 'ctab' + (state.activeCompany === CONSUMPTION_TAB ? ' active' : '');
+  cb.innerHTML = '📊 Потребление ОРЭМ';
+  cb.addEventListener('click', ()=>{ state.activeCompany = CONSUMPTION_TAB; render(); });
+  el.appendChild(cb);
 }
 
 function renderKpis(){
@@ -1438,6 +1625,8 @@ function openEditModal(id) {
     render();
   });
 }
+
+document.getElementById('consAddMonthBtn').addEventListener('click', addConsMonth);
 
 initSupabase();
 loadState();
