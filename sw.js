@@ -1,73 +1,35 @@
-const CACHE_NAME = 'orem-dashboard-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json'
-];
+// Service Worker: сеть в приоритете, кеш только как запасной вариант без интернета.
+// Запросы к другим сайтам (Supabase, CDN) в SW не вмешиваются.
+const CACHE_NAME = 'orem-dashboard-v2';
 
-// Установка service worker
-self.addEventListener('install', event => {
-  console.log('📦 Service Worker: установка');
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      console.log('✓ Service Worker: кеш готов');
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
-  );
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
-// Активация service worker
 self.addEventListener('activate', event => {
-  console.log('🚀 Service Worker: активация');
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('🗑️ Service Worker: удаляю старый кеш', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Обработка запросов
 self.addEventListener('fetch', event => {
-  // Игнорируем POST/PUT/DELETE запросы - они идут на сервер
-  if (event.request.method !== 'GET') {
-    return;
-  }
+  const req = event.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // Supabase и внешние скрипты — мимо SW
 
   event.respondWith(
-    caches.match(event.request).then(response => {
-      // Если есть в кеше - возвращаем
-      if (response) {
-        return response;
-      }
-
-      // Иначе загружаем с сервера
-      return fetch(event.request).then(response => {
-        // Если это не успешный ответ - игнорируем
-        if (!response || response.status !== 200 || response.type === 'error') {
-          return response;
+    fetch(req, { cache: 'no-cache' })
+      .then(res => {
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(req, copy));
         }
-
-        // Кешируем ответ
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, responseToCache);
-        });
-
-        return response;
-      }).catch(error => {
-        console.error('🔴 Service Worker fetch error:', error);
-        // Возвращаем кешированную версию если есть
-        return caches.match(event.request);
-      });
-    })
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
