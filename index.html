@@ -96,6 +96,13 @@
   .cons-top th.cons-qcol{background:var(--panel-2);}
   .cons-table th.cons-qcol{font-family:var(--sans);}
   .cons-qyear{font-size:10px;font-weight:400;color:var(--ink-3);}
+  .cons-chart-box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;}
+  .cons-chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+  .cons-chart-title{font-size:13px;font-weight:600;color:var(--ink);}
+  .cons-chart-sel{background:var(--bg);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12.5px;max-width:100%;}
+  .cons-chart-scroll{overflow-x:auto;}
+  .cons-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:11.5px;color:var(--ink-2);}
+  .cons-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;}
   .cons-code{font-size:11px;color:var(--accent);font-family:var(--mono);}
   .cons-input{width:92px;text-align:right;font-family:var(--mono);font-size:13px;background:var(--bg);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:5px 6px;}
   .cons-input:focus{outline:none;border-color:var(--accent);}
@@ -318,6 +325,14 @@ function setSyncStatus(status) {
       <div class="toolbar">
         <button class="addbtn" id="consAddMonthBtn">+ месяц</button>
       </div>
+    </div>
+    <div class="cons-chart-box" id="consChartBox">
+      <div class="cons-chart-head">
+        <span class="cons-chart-title">График потребления</span>
+        <select id="consChartSel" class="cons-chart-sel"></select>
+      </div>
+      <div class="cons-chart-scroll" id="consChart"></div>
+      <div class="cons-legend" id="consLegend"></div>
     </div>
     <div id="consumptionList"></div>
   </div>
@@ -980,6 +995,7 @@ function renderConsumption(){
   const list = consProjects();
   const months = consMonths();
   const years = consYears();
+  document.getElementById('consChartBox').style.display = list.length ? '' : 'none';
 
   if (!list.length) {
     el.innerHTML = '<div class="cons-empty">Нет объектов «на ОРЭМ» во вкладке ' + CONS_COMPANY + '</div>';
@@ -1029,6 +1045,7 @@ function renderConsumption(){
   el.querySelectorAll('.cons-del').forEach(btn => {
     btn.addEventListener('click', () => deleteConsMonth(btn.dataset.month));
   });
+  fillConsChartSelect();
   updateConsTotals();
 }
 
@@ -1058,6 +1075,116 @@ function updateConsTotals(){
   }));
   const g = document.getElementById('consGrand');
   if (g) g.textContent = fmtSum(list.flatMap(p => Object.values(p.monthly || {})));
+  renderConsChart();
+}
+
+// ----- График потребления -----
+let consChartMode = 'sum';   // 'sum' | 'stack' | 'p:<id>'
+const CONS_COLORS = ['#4FC3F7','#81C784','#FFB74D','#BA68C8','#E57373','#4DB6AC','#F06292','#AED581','#7986CB','#FFD54F','#A1887F','#90A4AE','#FF8A65','#9575CD','#4DD0E1','#DCE775'];
+
+function isNum(v){ return typeof v === 'number' && isFinite(v); }
+
+// Короткая подпись над столбцом: 1,99 млн / 133 тыс / 7 087
+function fmtShort(n){
+  if (n >= 1e6) return (n / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' млн';
+  if (n >= 1e4) return Math.round(n / 1e3).toLocaleString('ru-RU') + ' тыс';
+  return fmtNum(n);
+}
+
+// Красивая шкала оси Y: шаг 1/2/2.5/5/10 × 10^k, около 4 делений
+function niceScale(maxV){
+  if (!(maxV > 0)) return { max: 1, step: 0.25 };
+  const raw = maxV / 4;
+  const e = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / e;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e;
+  return { step: step, max: step * Math.ceil(maxV / step) };
+}
+
+function fillConsChartSelect(){
+  const sel = document.getElementById('consChartSel');
+  if (!sel) return;
+  let opts = '<option value="sum">Все ГТП — сумма</option><option value="stack">Все ГТП — в разрезе</option>';
+  consProjects().forEach(p => { opts += '<option value="p:' + p.id + '">' + escapeHtml(p.name) + '</option>'; });
+  sel.innerHTML = opts;
+  if (![...sel.options].some(o => o.value === consChartMode)) consChartMode = 'sum';
+  sel.value = consChartMode;
+}
+
+function renderConsChart(){
+  const box = document.getElementById('consChart');
+  const legend = document.getElementById('consLegend');
+  if (!box) return;
+  const list = consProjects();
+  const months = consMonths();
+  if (!months.length) {
+    box.innerHTML = '<div class="cons-empty">Добавь месяц и внеси потребление — здесь появится график</div>';
+    legend.innerHTML = '';
+    return;
+  }
+
+  // Серии: у каждой — значения по месяцам (число или null)
+  let series;
+  if (consChartMode === 'stack') {
+    series = list.map((p, i) => ({
+      name: p.name, color: CONS_COLORS[i % CONS_COLORS.length],
+      vals: months.map(m => isNum((p.monthly || {})[m]) ? p.monthly[m] : null)
+    }));
+  } else if (consChartMode.indexOf('p:') === 0) {
+    const p = list.find(x => 'p:' + x.id === consChartMode);
+    series = [{ name: p ? p.name : '', color: CONS_COLORS[0],
+      vals: months.map(m => (p && isNum((p.monthly || {})[m])) ? p.monthly[m] : null) }];
+  } else {
+    series = [{ name: 'Все ГТП', color: CONS_COLORS[0], vals: months.map(m => {
+      const nums = list.map(p => (p.monthly || {})[m]).filter(isNum);
+      return nums.length ? nums.reduce((a, b) => a + b, 0) : null;
+    }) }];
+  }
+
+  const totals = months.map((m, i) => series.reduce((s, x) => s + (x.vals[i] || 0), 0));
+  const sc = niceScale(Math.max.apply(null, totals));
+
+  const L = 64, R = 12, T = 24, B = 34, H = 260;
+  const plotH = H - T - B;
+  const minSlot = 64;
+  const W = Math.max(box.clientWidth || 600, L + R + months.length * minSlot);
+  const slot = (W - L - R) / months.length;
+  const barW = Math.min(46, slot * 0.62);
+  const y = v => T + plotH - (v / sc.max) * plotH;
+
+  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;width:' + W + 'px;height:' + H + 'px;font-family:inherit;">';
+
+  // Сетка и подписи оси Y
+  for (let v = 0; v <= sc.max + sc.step / 2; v += sc.step) {
+    const yy = y(v);
+    svg += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '" style="stroke:var(--border);stroke-width:1;"/>';
+    svg += '<text x="' + (L - 8) + '" y="' + (yy + 3.5) + '" text-anchor="end" style="fill:var(--ink-3);font-size:10.5px;">' + fmtNum(v) + '</text>';
+  }
+
+  // Столбцы
+  months.forEach((m, i) => {
+    const x = L + slot * i + (slot - barW) / 2;
+    let acc = 0;
+    series.forEach(sr => {
+      const v = sr.vals[i];
+      if (!isNum(v) || v <= 0) return;
+      const yTop = y(acc + v), yBot = y(acc);
+      svg += '<rect x="' + x + '" y="' + yTop + '" width="' + barW + '" height="' + Math.max(0.5, yBot - yTop) + '" rx="2" style="fill:' + sr.color + ';">'
+        + '<title>' + escapeHtml(sr.name) + ' · ' + monthLabel(m) + ': ' + fmtNum(v) + ' ' + CONS_UNIT + '</title></rect>';
+      acc += v;
+    });
+    if (acc > 0) {
+      svg += '<text x="' + (x + barW / 2) + '" y="' + (y(acc) - 6) + '" text-anchor="middle" style="fill:var(--ink);font-size:11px;font-weight:600;">' + fmtShort(acc) + '</text>';
+    }
+    svg += '<text x="' + (x + barW / 2) + '" y="' + (H - 14) + '" text-anchor="middle" style="fill:var(--ink-2);font-size:10.5px;">' + monthLabel(m) + '</text>';
+  });
+
+  svg += '</svg>';
+  box.innerHTML = svg;
+
+  legend.innerHTML = (consChartMode === 'stack')
+    ? series.map(sr => '<span><i style="background:' + sr.color + ';"></i>' + escapeHtml(sr.name) + '</span>').join('')
+    : '';
 }
 
 function onConsInputChange(inp){
@@ -1684,6 +1811,7 @@ function openEditModal(id) {
 }
 
 document.getElementById('consAddMonthBtn').addEventListener('click', addConsMonth);
+document.getElementById('consChartSel').addEventListener('change', e => { consChartMode = e.target.value; renderConsChart(); });
 
 initSupabase();
 loadState();
